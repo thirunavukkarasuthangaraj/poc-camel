@@ -4,52 +4,21 @@ metadata:
   name: bridge-config
   namespace: pinkline
 data:
-  # ═══════════════════════════════════════════════════════════════════
-  # Bridge config — binds to application-prod.properties ${ENV_VAR} refs
-  # Every value below is configurable. DevOps: edit, then apply.
-  # ═══════════════════════════════════════════════════════════════════
+  # Broker addresses (env). Credentials: secret.yaml. Topics: configmap-appprops.yaml.
   SPRING_PROFILES_ACTIVE: "prod"
 
-  # ── ActiveMQ Artemis (IN-CLUSTER: same namespace, Service DNS) ─────
-  # camel.component.activemq.broker-url = tcp://${ARTEMIS_HOST}:${ARTEMIS_PORT}
+  # ActiveMQ Artemis (TMS)
   ARTEMIS_HOST: "10.4.1.28"
   ARTEMIS_PORT: "61616"
-  # For TLS acceptors (Azure): set scheme to ssl, point PORT at the TLS
-  # acceptor (often 61617), set TLS_TRUSTSTORE_PATH below, and create the
-  # bridge-tls-truststore Secret (see deployment.yaml volumes comment).
+  # TLS acceptor: set ARTEMIS_SCHEME=ssl, TLS_TRUSTSTORE_PATH=/etc/ssl/bridge/truststore.jks,
+  # create Secret bridge-tls-truststore (truststore.jks) and add TLS_TRUSTSTORE_PASS to bridge-secret.
   # ARTEMIS_SCHEME: "ssl"
+  # TLS_TRUSTSTORE_PATH: "/etc/ssl/bridge/truststore.jks"
 
-  # ── Kafka (IN-CLUSTER: same namespace, Service DNS) ────────────────
-  # kafka.brokers = ${KAFKA_HOST}:${KAFKA_PORT}
+  # Kafka
   KAFKA_HOST: "kafka-cluster-kafka-bootstrap.kafka.svc.cluster.local"
   KAFKA_PORT: "9092"
 
-  # ── RabbitMQ (EXTERNAL VM / SCADA cluster — cross-VM reach) ────────
-  # spring.rabbitmq.host = ${RABBITMQ_HOST}
-  # spring.rabbitmq.port = ${RABBITMQ_PORT}
+  # RabbitMQ (SCADA side; external systems consume from it over AMQP or MQTT)
   RABBITMQ_HOST: "rabbitmq-internal.scada.svc.cluster.local"
-  RABBITMQ_PORT: "5672"             # host-mapped port on SCADA VM
-
-  # ── MQTT (same external RabbitMQ broker, MQTT plugin) ──────────────
-  # bridge.mqtt.broker-url = tcp://${MQTT_HOST}:${MQTT_PORT}
-  MQTT_HOST: "rabbitmq-internal.scada.svc.cluster.local"
-  MQTT_PORT: "1883"                 # host-mapped MQTT port on SCADA VM
-
-  # ── Bridge pipeline & behaviour (configurable per env) ─────────────
-  BRIDGE_PIPELINE: "kafka"
-  BRIDGE_MONITOR_ENABLED: "true"
-  BRIDGE_MONITOR_FROM_EXCHANGE: "amq.topic"
-  BRIDGE_MONITOR_ROUTING_KEY: "tms.scada.pas"
-  BRIDGE_MONITOR_QUEUE: "scada.monitor.queue"
-
-  # ── Topics / sink names live in configmap-appprops.yaml ────────────
-  # All topic config (artemis listen list, kafka topic names, rabbitmq
-  # routing keys, reverse sinks) is in configmap-appprops.yaml mounted
-  # as /app/config/application.properties. Edit that file, apply, restart.
-  # Do NOT set BRIDGE_ARTEMISTOPICS here — env vars override the mounted
-  # file and create a confusing dual source of truth.
-
-  # ── TLS (uncomment together with ARTEMIS_SCHEME above; the truststore
-  # Secret bridge-tls-truststore must contain truststore.jks, and
-  # bridge-secret needs a TLS_TRUSTSTORE_PASS key) ────────────────────
-  # TLS_TRUSTSTORE_PATH: "/etc/ssl/bridge/truststore.jks"
+  RABBITMQ_PORT: "5672"

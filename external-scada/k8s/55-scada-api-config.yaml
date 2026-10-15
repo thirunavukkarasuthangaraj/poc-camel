@@ -23,13 +23,10 @@ data:
   # ── Identity ───────────────────────────────────────────────────────
   SCADA_CREATOR_ID: "ScateX"
 
-  # ── Power-SCADA → TMS Artemis (direct publish) ─────────────────────
+  # ── TMS Artemis (direct STOMP publish: Power-SCADA feed + TMS test injector) ──
   ARTEMIS_HOST:  "10.4.1.28"
   ARTEMIS_PORT:  "61616"
   ARTEMIS_TOPIC: "POWER_SCADA_TMS_INFO"
-
-  # ── Bridge URL (for /api/publish/tms passthrough) ──────────────────
-  BRIDGE_URL: "http://pas-scada-bridge.pinkline.svc.cluster.local:8085"
 
   # ── Auto-send: SILENT BY DEFAULT (per project convention) ──────────
   # A fresh pod publishes NOTHING until you start it from the dashboard.

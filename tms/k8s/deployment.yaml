@@ -18,16 +18,14 @@ spec:
       containers:
         - name: pas-scada-bridge
           image: pinkline/pas-scada-bridge:latest
-          # Never = use only the locally-built image (Docker Desktop k8s
-          # shares the host Docker daemon, so this works out of the box).
-          # For AKS/registry-pull, switch to IfNotPresent.
+          # Never = image is imported on every node with ctr (no registry).
           imagePullPolicy: Never
           ports:
             - containerPort: 8085
 
           # ── Non-sensitive config from ConfigMap ──────────
           # Provides: SPRING_PROFILES_ACTIVE, ARTEMIS_HOST/PORT,
-          #           KAFKA_HOST/PORT, RABBITMQ_HOST/PORT, MQTT_HOST/PORT
+          #           KAFKA_HOST/PORT, RABBITMQ_HOST/PORT
           envFrom:
             - configMapRef:
                 name: bridge-config
@@ -49,8 +47,7 @@ spec:
               readOnly: true
 
           # ── Sensitive config from Secret ─────────────────
-          # Provides: ARTEMIS_USER/PASS, RABBITMQ_USER/PASS,
-          #           MQTT_USER/PASS, SCADA_AES_KEY
+          # Provides: ARTEMIS_USER/PASS, RABBITMQ_USER/PASS, SCADA_AES_KEY
           env:
             - name: SPRING_CONFIG_ADDITIONAL_LOCATION
               value: "file:/app/config/application.properties"
@@ -79,16 +76,6 @@ spec:
                 secretKeyRef:
                   name: bridge-secret
                   key: RABBITMQ_PASS
-            - name: MQTT_USER
-              valueFrom:
-                secretKeyRef:
-                  name: bridge-secret
-                  key: MQTT_USER
-            - name: MQTT_PASS
-              valueFrom:
-                secretKeyRef:
-                  name: bridge-secret
-                  key: MQTT_PASS
             # Truststore password — optional so non-TLS envs don't need the key
             - name: TLS_TRUSTSTORE_PASS
               valueFrom:

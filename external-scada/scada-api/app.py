@@ -52,7 +52,6 @@ from datetime import datetime, timedelta, timezone
 from queue import Queue, Empty
 
 import paho.mqtt.client as mqtt
-import requests
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from flask import Flask, Response, jsonify, request, send_from_directory
 
@@ -516,10 +515,8 @@ def api_status():
     })
 
 
-# ── TMS Publisher (for demo: synthesize TMS-side messages and POST them
-# to the bridge's REST publish endpoint, which writes to Artemis) ──────
-BRIDGE_URL = os.getenv("BRIDGE_URL",
-            "http://pas-scada-bridge.pinkline.svc.cluster.local:8085").rstrip("/")
+# ── TMS Publisher (for demo: synthesize the Traffic Scheduler's PAS message
+# and publish it straight to the TMS Artemis broker over STOMP) ──────────
 
 tms_pub = {
     "enabled":    False,
@@ -592,12 +589,8 @@ def _tms_xml(topic: str) -> str:
     return json.dumps(msg, indent=2)
 
 
-def _tms_publish(topic: str, xml: str) -> None:
-    url = f"{BRIDGE_URL}/api/tms-publish/{topic}"
-    r = requests.post(url, data=xml.encode("utf-8"),
-                      headers={"Content-Type": "application/json"},
-                      timeout=5)
-    r.raise_for_status()
+def _tms_publish(topic: str, payload: str) -> None:
+    _artemis_stomp_send(topic, payload)
     tms_pub["sent"] += 1
     tms_pub["last_at"] = now_iso()
     tms_pub["last_error"] = None
@@ -652,7 +645,7 @@ def api_tms_publish_config():
 
 @app.route("/api/tms-publish/state")
 def api_tms_publish_state():
-    return jsonify({**tms_pub, "topics": TMS_TOPICS, "bridge_url": BRIDGE_URL})
+    return jsonify({**tms_pub, "topics": TMS_TOPICS, "artemis": f"{ARTEMIS_HOST}:{ARTEMIS_PORT}"})
 
 
 @app.route("/api/tms-publish/template")
@@ -952,9 +945,12 @@ def _power_scada_payload(mode: str) -> dict:
 
 
 def _power_scada_publish_json(payload: dict) -> None:
-    """Send a JSON payload to Artemis via STOMP over a single short
+    _artemis_stomp_send(ARTEMIS_TOPIC, json.dumps(payload))
+
+
+def _artemis_stomp_send(destination: str, body: str) -> None:
+    """Send one JSON body to an Artemis address via STOMP over a single short
     connection. Raises on any failure."""
-    body = json.dumps(payload)
     sock = socket.create_connection((ARTEMIS_HOST, ARTEMIS_PORT), timeout=5)
     try:
         sock.settimeout(5)
@@ -980,7 +976,7 @@ def _power_scada_publish_json(payload: dict) -> None:
 
         send_frame = (
             "SEND\n"
-            f"destination:{ARTEMIS_TOPIC}\n"
+            f"destination:{destination}\n"
             "content-type:application/json\n"
             "\n"
             f"{body}\x00"

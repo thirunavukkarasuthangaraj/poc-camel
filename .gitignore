@@ -31,3 +31,5 @@ __pycache__/
 *.tar
 docker
 
+# local image / source bundles for manual transfer
+dist/

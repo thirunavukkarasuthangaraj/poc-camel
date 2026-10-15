@@ -6,7 +6,6 @@ This folder is reserved for the SCADA API service that will:
 - Translate RSAE JSON envelopes (CreatorId/Type/Timestamp/Alarm)
 - Forward to ScateX / field HMIs
 
-Uncomment the `scada-api:` service in `../docker-compose.yml` once the image is ready.
 
 See repo `README.md` and `architecture-diagram-connect.html` for the full system architecture.
 
