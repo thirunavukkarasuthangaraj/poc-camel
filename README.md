@@ -41,9 +41,9 @@ consumer). `bridge.reverse.decrypt-enabled=true` decrypts SCADA's messages with 
 ## Build (any machine with Docker; the production nodes have none)
 
 ```bash
-docker build -t pinkline/pas-scada-bridge:latest tms/
+docker build -t 10.4.1.28:4001/tms/pas-scada-bridge:2.0.0 tms/
 docker build -t ghcr.io/thirunavukkarasuthangaraj/pas-scada-api:latest external-scada/scada-api/
-docker save pinkline/pas-scada-bridge:latest | gzip > bridge.tar.gz
+docker save 10.4.1.28:4001/tms/pas-scada-bridge:2.0.0 | gzip > bridge.tar.gz
 ```
 
 Unit tests: `docker run --rm -v "$PWD/tms:/w" -w /w maven:3.9-eclipse-temurin-17 mvn -B clean test`
@@ -55,14 +55,14 @@ CTR=/var/lib/rancher/rke2/bin/ctr
 for n in 10.4.1.23 10.4.1.24 10.4.1.25; do
   scp -q bridge.tar.gz $n:/root/ && ssh $n "gunzip -c /root/bridge.tar.gz | $CTR -n k8s.io images import -"
 done
-kubectl -n pinkline apply -f tms/k8s/configmap.yaml -f tms/k8s/configmap-appprops.yaml -f tms/k8s/secret.yaml -f tms/k8s/deployment.yaml
-kubectl -n pinkline rollout restart deploy/pas-scada-bridge
-kubectl -n pinkline rollout status  deploy/pas-scada-bridge --timeout=300s
+kubectl -n poc-camel apply -f tms/k8s/
+kubectl -n poc-camel rollout restart deploy/pas-scada-bridge
+kubectl -n poc-camel rollout status  deploy/pas-scada-bridge --timeout=300s
 ```
 
-Verify: `kubectl -n pinkline logs deploy/pas-scada-bridge --tail=200 | grep -E "Started|outbound-|relay-|scada-source-|artemis-sink-|ERROR"`
+Verify: `kubectl -n poc-camel logs deploy/pas-scada-bridge --tail=200 | grep -E "Started|outbound-|relay-|scada-source-|artemis-sink-|ERROR"`
 
-Rollback: `kubectl -n pinkline rollout undo deploy/pas-scada-bridge`
+Rollback: `kubectl -n poc-camel rollout undo deploy/pas-scada-bridge`
 
 ## Failure handling
 

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: pas-scada-bridge
-  namespace: pinkline
+  namespace: poc-camel
   labels:
     app: pas-scada-bridge
 spec:
@@ -17,9 +17,8 @@ spec:
     spec:
       containers:
         - name: pas-scada-bridge
-          image: pinkline/pas-scada-bridge:latest
-          # Never = image is imported on every node with ctr (no registry).
-          imagePullPolicy: Never
+          image: 10.4.1.28:4001/tms/pas-scada-bridge:2.0.0
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8085
 
@@ -122,7 +121,7 @@ spec:
         # doesn't exist (mounts as empty dir); create it for TLS brokers:
         #   keytool -importcert -alias artemis -file broker.pem \
         #     -keystore truststore.jks -storepass <pass> -noprompt
-        #   kubectl -n pinkline create secret generic bridge-tls-truststore \
+        #   kubectl -n poc-camel create secret generic bridge-tls-truststore \
         #     --from-file=truststore.jks
         - name: truststore
           secret:
@@ -134,7 +133,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: pas-scada-bridge
-  namespace: pinkline
+  namespace: poc-camel
 spec:
   selector:
     app: pas-scada-bridge

@@ -2,13 +2,13 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: bridge-appprops
-  namespace: pinkline
+  namespace: poc-camel
 data:
   # Mounted as /app/config/application.properties (SPRING_CONFIG_ADDITIONAL_LOCATION).
   # Topics / routing keys live here. Edit, apply, restart — no image rebuild.
   #
-  #   kubectl -n pinkline apply -f tms/k8s/configmap-appprops.yaml
-  #   kubectl -n pinkline rollout restart deploy/pas-scada-bridge
+  #   kubectl -n poc-camel apply -f tms/k8s/configmap-appprops.yaml
+  #   kubectl -n poc-camel rollout restart deploy/pas-scada-bridge
   application.properties: |
     # ── TMS → SCADA ────────────────────────────────────────────────
     # Traffic Scheduler publishes the final APIS JSON here; forwarded as-is.

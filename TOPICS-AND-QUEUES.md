@@ -36,7 +36,7 @@ offsets survive a restart.
 
 ```bash
 # bridge routes up
-kubectl -n pinkline logs deploy/pas-scada-bridge --tail=200 | grep -E "Started|outbound-|relay-|scada-source-|artemis-sink-|ERROR"
+kubectl -n poc-camel logs deploy/pas-scada-bridge --tail=200 | grep -E "Started|outbound-|relay-|scada-source-|artemis-sink-|ERROR"
 
 # Artemis side
 kubectl -n artemis exec artemis-0 -- /var/lib/artemis-instance/bin/artemis queue stat | grep -E "rcs.e2k.ctc.train.pas.new|SCADA.TMS.Alarms|DLQ.kafka-bridge"
