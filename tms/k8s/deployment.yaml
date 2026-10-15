@@ -17,36 +17,36 @@ spec:
     spec:
       containers:
         - name: pas-scada-bridge
-          image: 10.4.1.28:4001/tms/pas-scada-bridge:2.0.0
+          # Plain Java 17 runtime (imported once on every node). The application
+          # itself is the jar in /opt/tms-jars/bridge on the node — copy a new jar
+          # there and `rollout restart` to release; no image rebuild.
+          image: 10.4.1.28:4001/tms/temurin:17-jre-alpine
           imagePullPolicy: IfNotPresent
+          command: ["java", "-jar", "/app/jar/pas-scada-bridge.jar"]
           ports:
             - containerPort: 8085
 
-          # ── Non-sensitive config from ConfigMap ──────────
-          # Provides: SPRING_PROFILES_ACTIVE, ARTEMIS_HOST/PORT,
-          #           KAFKA_HOST/PORT, RABBITMQ_HOST/PORT
+          # Broker addresses: ConfigMap bridge-config
           envFrom:
             - configMapRef:
                 name: bridge-config
 
-          # ── Mounted application.properties (all topics/sinks live here)
-          # ConfigMap bridge-appprops → /app/config/application.properties
-          # Spring loads it via SPRING_CONFIG_ADDITIONAL_LOCATION below,
-          # so any edit + apply + rollout restart picks up new topics
-          # with NO image rebuild.
           volumeMounts:
+            # the jar, from the node's disk
+            - name: jar
+              mountPath: /app/jar
+              readOnly: true
+            # topics / routing keys: ConfigMap bridge-appprops
             - name: appprops
               mountPath: /app/config/application.properties
               subPath: application.properties
               readOnly: true
-            # TLS truststore (Secret bridge-tls-truststore; optional —
-            # mounts empty when the secret doesn't exist, e.g. local)
+            # TLS truststore (optional Secret bridge-tls-truststore)
             - name: truststore
               mountPath: /etc/ssl/bridge
               readOnly: true
 
-          # ── Sensitive config from Secret ─────────────────
-          # Provides: ARTEMIS_USER/PASS, RABBITMQ_USER/PASS, SCADA_AES_KEY
+          # Credentials: Secret bridge-secret
           env:
             - name: SPRING_CONFIG_ADDITIONAL_LOCATION
               value: "file:/app/config/application.properties"
@@ -75,7 +75,6 @@ spec:
                 secretKeyRef:
                   name: bridge-secret
                   key: RABBITMQ_PASS
-            # Truststore password — optional so non-TLS envs don't need the key
             - name: TLS_TRUSTSTORE_PASS
               valueFrom:
                 secretKeyRef:
@@ -83,7 +82,6 @@ spec:
                   key: TLS_TRUSTSTORE_PASS
                   optional: true
 
-          # ── Health checks ─────────────────────────────────
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
@@ -92,7 +90,6 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 5
-
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
@@ -111,18 +108,20 @@ spec:
               cpu: "500m"
 
       volumes:
+        # Same path on every node (the pod can be scheduled on any of them):
+        #   /opt/tms-jars/bridge/pas-scada-bridge.jar
+        - name: jar
+          hostPath:
+            path: /opt/tms-jars/bridge
+            type: Directory
         - name: appprops
           configMap:
             name: bridge-appprops
             items:
               - key: application.properties
                 path: application.properties
-        # TLS truststore — optional: pods still start where the secret
-        # doesn't exist (mounts as empty dir); create it for TLS brokers:
-        #   keytool -importcert -alias artemis -file broker.pem \
-        #     -keystore truststore.jks -storepass <pass> -noprompt
-        #   kubectl -n poc-camel create secret generic bridge-tls-truststore \
-        #     --from-file=truststore.jks
+        # optional; pods start without it (empty mount). For TLS brokers:
+        #   kubectl -n poc-camel create secret generic bridge-tls-truststore --from-file=truststore.jks
         - name: truststore
           secret:
             secretName: bridge-tls-truststore
