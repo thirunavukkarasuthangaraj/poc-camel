@@ -119,7 +119,7 @@ kubectl -n scada port-forward svc/rabbitmq-internal    1883:1883 15672:15672  &
 ## Verify forward + reverse paths
 
 ```bash
-# Forward path: publish a test XML to Artemis TMS.PISInfo
+# Forward path: publish a test APIS JSON to Artemis jms.topic.rcs.e2k.ctc.train.pas.new
 kubectl apply -f test-publish.yaml
 # Then watch http://localhost:8091 (SCADA dashboard) → "TMS → SCADA" panel.
 # Decoded JSON should appear within ~3 seconds.

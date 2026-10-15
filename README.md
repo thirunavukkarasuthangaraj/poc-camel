@@ -45,7 +45,7 @@ Per-module README files exist for deep-dives only.
    │   │                       ▼                                   │          │      ▼                  │
    │   │            ┌──────────────────────┐                       │          │  SCADA API              │
    │   │            │ tms/ Spring Boot     │                       │          │  (Python · Flask)        │
-   │   │            │ XmlToJson + Encrypt  │ when                  │          │                         │
+   │   │            │ pass-through+Encrypt │ when                  │          │                         │
    │   │            │ BRIDGE_INPUT_FROM_KAFKA=true │                │          │  decrypts AES-GCM       │
    │   │            └──────────────────────┘                       │          │  publishes RSAE back    │
    │   │                       │                                   │          │  via MQTT               │
@@ -83,7 +83,7 @@ Per-module README files exist for deep-dives only.
 
 | Module | Status | What it is | Built with |
 |---|---|---|---|
-| `tms/` | ✅ Existing (kept) — *2 new toggleable Camel routes added* | Spring Boot Camel bridge: XmlToJson + AES + JsonToXml | Java 17 · Spring Boot 3.2 · Camel 4.4 |
+| `tms/` | ✅ Existing (kept) — *2 new toggleable Camel routes added* | Spring Boot Camel bridge: AES + JsonToXml | Java 17 · Spring Boot 3.2 · Camel 4.4 |
 | `external-scada/` | ✅ Existing (untouched) | SCADA simulator + RabbitMQ on the SCADA VM | Python · Flask · paho-mqtt |
 | `connect/` | 🆕 **NEW** | Kafka Connect worker + 4 Camel-based connectors | Confluent cp-kafka-connect 7.5 + Camel KC 4.8.3 |
 | `bootstrap/` | 🆕 **NEW** | Two run-once k8s Jobs that pre-create topics + RMQ queue | shell scripts in k8s Jobs |
@@ -99,11 +99,11 @@ Per-module README files exist for deep-dives only.
 ```
 TMS publishes XML
    ↓ JMS
-Artemis topic TMS.PISInfo
+Artemis topic jms.topic.rcs.e2k.ctc.train.pas.new (APIS JSON)
    ↓
 tms/ Camel route consumes Artemis
    ↓
-XmlToJson + AES encrypt
+AES encrypt (body forwarded as-is)
    ↓
 Kafka tms.scada.encrypted     +   RabbitMQ amq.topic / tms.scada.pas   +   MQTT direct
                                   (bridge writes all three sinks itself)
@@ -116,13 +116,13 @@ SCADA API subscribes via MQTT plugin
 ```
 TMS publishes XML
    ↓ JMS
-Artemis topic TMS.PISInfo
+Artemis topic jms.topic.rcs.e2k.ctc.train.pas.new (APIS JSON)
    ↓
 tms-artemis-source  (Connect)         ◄── on err: dlq.connect.tms-artemis-source
    ↓
 Kafka tms.raw
    ↓
-tms/ Camel — XmlToJson + AES encrypt   ◄── on err: Artemis DLQ.kafka-bridge
+tms/ Camel — AES encrypt (body as-is)   ◄── on err: Artemis DLQ.kafka-bridge
    ↓
 Kafka tms.scada.encrypted
    ↓
@@ -171,7 +171,7 @@ TMS consumers
 | `dlq.connect.tms-rabbitmq-sink` | Kafka topic | 14d | Connect can't write RabbitMQ (cross-VM down, auth) |
 | `dlq.connect.scada-rabbitmq-source` | Kafka topic | 14d | Connect can't read SCADA-side RMQ queue |
 | `dlq.connect.scada-artemis-sink` | Kafka topic | 14d | Connect can't write back to Artemis |
-| `DLQ.kafka-bridge` | Artemis queue (existing) | broker default | tms/ Camel `onException` fires (XmlToJson parse, AES fail) |
+| `DLQ.kafka-bridge` | Artemis queue (existing) | broker default | tms/ Camel `onException` fires (AES fail, broker send fail) |
 
 **Inspect:**
 
@@ -323,7 +323,7 @@ kubectl -n pinkline run -it --rm artemis-cli \
   --image=apache/activemq-artemis:2.31.2 --restart=Never --command -- /bin/sh -c \
   'artemis producer --url tcp://artemis-service:61616 \
      --user pasbridge --password testpass123 \
-     --destination topic://TMS.PISInfo --message-count 1 \
+     --destination topic://jms.topic.rcs.e2k.ctc.train.pas.new --message-count 1 \
      --message "<rcsMsg><data>verify</data></rcsMsg>"'
 # Then check Kafdrop for the new record on tms.raw
 ```
@@ -442,7 +442,7 @@ PAS-SCADA-Kafka-Bridge/
 ├── docker-compose.yml               ← local-only dev (no k8s)
 │
 ├── tms/                             ← Java Spring Boot Camel bridge (existing)
-│   ├── src/main/java/...            ← XmlToJson, AES, routes
+│   ├── src/main/java/...            ← AES, routes
 │   ├── k8s/                         ← bridge Deployment manifests
 │   └── pom.xml
 │

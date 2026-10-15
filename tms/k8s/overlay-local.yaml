@@ -29,7 +29,7 @@ data:
   # SCADA→TMS direction is plain JSON (no encryption). Forward stays encrypted.
   BRIDGE_REVERSE_KAFKA_ENCRYPT_ENABLED: "false"
   BRIDGE_PIPELINE: "kafka"
-  BRIDGE_ARTEMIS_TOPICS: "TMS.PISInfo,RCS.E2K.TMS.TrafficReportClient,TSInfo,RCS.E2K.TMS.RouteInfo"
+  BRIDGE_ARTEMIS_TOPICS: "jms.topic.rcs.e2k.ctc.train.pas.new"
   BRIDGE_MONITOR_ENABLED: "true"
   BRIDGE_MONITOR_FROM_EXCHANGE: "amq.topic"
   BRIDGE_MONITOR_ROUTING_KEY: "tms.scada.pas"

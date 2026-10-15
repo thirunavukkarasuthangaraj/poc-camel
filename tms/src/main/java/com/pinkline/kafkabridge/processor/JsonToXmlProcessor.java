@@ -11,8 +11,7 @@ import org.slf4j.LoggerFactory;
 /**
  * JsonToXmlProcessor
  *
- * Generic, schema-agnostic JSON → XML converter — the reverse of
- * {@link XmlToJsonProcessor}.
+ * Generic, schema-agnostic JSON → XML converter (SCADA → TMS reverse path).
  *
  * The XML root element name is taken from the "xmlRootName" header (set from
  * config, never hardcoded here). If the header is absent and the JSON is a

@@ -8,7 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
 /**
- * DecryptExample
+ * AesGcmDecryptor
  *
  * ─────────────────────────────────────────────────────────────────────────
  * FOR THE SCADA TEAM — how to decrypt messages received from Kafka / MQTT
@@ -29,7 +29,7 @@ import java.util.Base64;
  *   1. Get the SCADA_AES_KEY from the Bridge server admin (same key must be used)
  *   2. Set it as an environment variable on the SCADA server:
  *        export SCADA_AES_KEY=<base64-256bit-key>
- *   3. Call DecryptExample.decrypt(payload) with the raw byte[] from Kafka/MQTT
+ *   3. Call AesGcmDecryptor.decrypt(payload) with the raw byte[] from Kafka/MQTT
  *   4. Returns the decrypted JSON string (structure mirrors the source message)
  *
  * IMPORTANT:
@@ -37,7 +37,7 @@ import java.util.Base64;
  *   - If the message was tampered → AEADBadTagException is thrown
  *   - Always treat AEADBadTagException as a security alert — log and discard
  */
-public class DecryptExample {
+public class AesGcmDecryptor {
 
     private static final String ENV_KEY     = "SCADA_AES_KEY";
     private static final int    IV_LENGTH   = 12;

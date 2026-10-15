@@ -568,19 +568,15 @@ pre, code, .json {
     <div class="cfg-section-hdr">
       <span class="dir-badge in">▶ Forward</span>
       <h3>TMS Publisher</h3>
-      <p>Inject test XML into TMS Artemis</p>
+      <p>Inject a test APIS JSON (PAS) into TMS Artemis</p>
     </div>
 
     <div class="cfg-card">
       <div class="cfg-field">
         <label>Topic</label>
-        <input type="text" id="tms-pub-topic" list="tms-pub-suggestions" value="jms.topic.TMS.PISInfo" placeholder="jms.topic.X — must match bridge allow-list">
+        <input type="text" id="tms-pub-topic" list="tms-pub-suggestions" value="jms.topic.rcs.e2k.ctc.train.pas.new" placeholder="jms.topic.X — must match bridge allow-list">
         <datalist id="tms-pub-suggestions">
-          <option value="jms.topic.TMS.PISInfo"></option>
-          <option value="jms.topic.rcs.e2k.ctc.train.pas"></option>
-          <option value="jms.topic.RCS.E2K.TMS.TrafficReportClient"></option>
-          <option value="jms.topic.TSInfo"></option>
-          <option value="jms.topic.RCS.E2K.TMS.RouteInfo"></option>
+          <option value="jms.topic.rcs.e2k.ctc.train.pas.new"></option>
         </datalist>
       </div>
       <div class="cfg-field" style="max-width:160px;">
@@ -1042,7 +1038,7 @@ function toggleTmsCustom(){
   const btn = $('tms-custom-btn');
   const open = box.style.display === 'none';
   box.style.display = open ? '' : 'none';
-  btn.textContent = open ? 'Custom XML ▴' : 'Custom XML ▾';
+  btn.textContent = open ? 'Custom JSON ▴' : 'Custom JSON ▾';
 }
 async function loadTmsTemplate(){
   const topic = $('tms-pub-topic').value;
@@ -1058,7 +1054,7 @@ async function loadTmsTemplate(){
 async function tmsPubCustom(){
   const topic = $('tms-pub-topic').value;
   const xml   = $('tms-custom-xml').value.trim();
-  if (!xml) { $('tms-pub-status').textContent = 'custom XML empty'; return; }
+  if (!xml) { $('tms-pub-status').textContent = 'custom JSON empty'; return; }
   const r = await fetch('/api/tms-publish',
     {method:'POST',headers:ct(),body:JSON.stringify({topic, xml})});
   const j = await r.json().catch(() => ({}));

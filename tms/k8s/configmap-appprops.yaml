@@ -20,7 +20,6 @@ data:
     # ║  Each flag is one true/false toggle. Edit, apply, restart.    ║
     # ║                                                                ║
     # ║  SCADA receiving  (TMS → SCADA)                                ║
-    # ║   xml-to-json : bridge.convert-xml-to-json                    ║
     # ║   encrypt     : bridge.encrypt.enabled                        ║
     # ║                                                                ║
     # ║  SCADA sending    (SCADA → TMS)                                ║
@@ -35,7 +34,9 @@ data:
 
     # --- TMS publishes here (bridge consumes — forward path source) ---
     # Comma-separated. Add/remove entries to start/stop a forward route.
-    bridge.artemis-topics=jms.topic.rcs.e2k.ctc.train.pas,jms.topic.TMS.PISInfo
+    bridge.artemis-topics=jms.topic.rcs.e2k.ctc.train.pas.new
+    # Existing named ANYCAST queues (optional, comma-separated). None today.
+    bridge.artemis-queues=
 
     # --- TMS subscribes here (bridge writes — reverse path sink) ---
     bridge.artemis-sink[0].to-topic=SCADA.TMS.Alarms
@@ -63,7 +64,7 @@ data:
     bridge.scada-source[0].to-kafka-topic=scada.tms.raw
 
     # ── Kafka transform stage ──────────────────────────────────────
-    bridge.reverse-kafka.enabled=${BRIDGE_REVERSE_KAFKA_ENABLED:true}
+    bridge.reverse-kafka.enabled=${BRIDGE_REVERSE_KAFKA_ENABLED:false}
     bridge.reverse-kafka.input-topic=scada.tms.raw
     bridge.reverse-kafka.output-topic=scada.tms.processed
     bridge.reverse-kafka.consumer-group=pas-bridge-reverse
@@ -78,10 +79,8 @@ data:
     # ════════════════════════════════════════════════════════════════
 
     # ── Behavior flags ─────────────────────────────────────────────
-    # xml-to-json: convert TMS's incoming XML to JSON before sending?
-    #   true  → bridge converts XML → JSON, SCADA receives JSON (default)
-    #   false → raw XML forwarded through untouched, SCADA receives XML
-    bridge.convert-xml-to-json=true
+    # The Traffic Scheduler publishes the final APIS JSON (ICD_PASIF_V3) on
+    # jms.topic.rcs.e2k.ctc.train.pas.new — the bridge forwards it as-is (no conversion).
 
     # encrypt: encrypt before sending to Kafka?
     #   true  → AES-256-GCM(payload) on Kafka/RMQ/MQTT (SCADA must decrypt)

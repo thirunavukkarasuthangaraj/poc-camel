@@ -14,8 +14,8 @@ flowchart LR
 
   %% Forward: TMS -> SCADA
   TMS["TMS<br/>(client)"]:::ext
-  ART_FWD["Artemis JMS<br/>TMS.PISInfo / TSInfo /<br/>RCS.E2K.TMS.TrafficReportClient /<br/>RCS.E2K.TMS.RouteInfo"]:::art
-  OUT["Camel: outbound-* &times; 4<br/>XmlToJson + Encrypt(AES-GCM)"]:::camel
+  ART_FWD["Artemis JMS<br/>jms.topic.rcs.e2k.ctc.train.pas.new<br/>(APIS JSON from Traffic Scheduler)"]:::art
+  OUT["Camel: outbound-*<br/>pass-through + Encrypt(AES-GCM)"]:::camel
   KAFKA_ENC["Kafka<br/>tms.scada.encrypted"]:::kafka
   RELAY["Camel: relay-*<br/>group: pas-bridge-consumer"]:::camel
   RMQ_FWD["RabbitMQ amq.topic<br/>routing-key: tms.scada.pas"]:::rmq
@@ -44,7 +44,7 @@ flowchart LR
 
 | # | Route ID | Direction | From → To |
 |---|---|---|---|
-| 1 | `outbound-tms-pisinfo` | Forward | Artemis `TMS.PISInfo` → Kafka `tms.scada.encrypted` |
+| 1 | `outbound-topic-jms-topic-rcs-e2k-ctc-train-pas-new` | Forward | Artemis `jms.topic.rcs.e2k.ctc.train.pas.new` → Kafka `tms.scada.encrypted` |
 | 2 | `outbound-rcs-e2k-tms-trafficreportclient` | Forward | Artemis `RCS.E2K.TMS.TrafficReportClient` → Kafka `tms.scada.encrypted` |
 | 3 | `outbound-tsinfo` | Forward | Artemis `TSInfo` → Kafka `tms.scada.encrypted` |
 | 4 | `outbound-rcs-e2k-tms-routeinfo` | Forward | Artemis `RCS.E2K.TMS.RouteInfo` → Kafka `tms.scada.encrypted` |
@@ -72,6 +72,19 @@ Camel global `onException(Exception.class)`:
 - After retries exhausted → `activemq:queue:DLQ.kafka-bridge` (Camel-managed Artemis DLQ)
 - No separate Kafka Connect DLQ topics — all DLQ handling is in-app
 
+Artemis forward inputs support both routing types concurrently:
+
+- `bridge.artemis-topics`: JMS Topic / Artemis MULTICAST consumers
+- `bridge.artemis-queues`: JMS Queue / existing Artemis ANYCAST queue consumers
+
+After a processing failure and three retries, the original payload is sent to
+`DLQ.kafka-bridge`. `handled(true)` then completes the Camel exchange, so a JMS
+queue source message is acknowledged after the DLQ path succeeds. The current
+JMS endpoints are not transacted, so the source acknowledgement and DLQ send
+are not one atomic broker transaction; this existing behavior is retained to
+avoid changing cross-broker retry and duplicate semantics without an
+Artemis-backed integration test.
+
 ## Deployment layout (Docker Desktop Kubernetes)
 
 ```
@@ -94,10 +107,10 @@ HOST (Windows + Docker Desktop)
 
 ## End-to-end smoke test
 
-1. Trigger forward: dashboard `/api/tms-publish` (or `curl -X POST localhost:8091/api/tms-publish -d '{"topic":"TMS.PISInfo"}'`)
+1. Trigger forward: dashboard `/api/tms-publish` (or `curl -X POST localhost:8091/api/tms-publish -d '{"topic":"jms.topic.rcs.e2k.ctc.train.pas.new"}'`)
 2. Expect bridge log:
    ```
-   ← Artemis [TMS.PISInfo] — pipeline: kafka | encrypt: true
+   ← Artemis TOPIC [jms.topic.rcs.e2k.ctc.train.pas.new] — pipeline: kafka | encrypt: true
    → Kafka [tms.scada.encrypted]
    ← Kafka relay [tms.scada.encrypted]
    → RabbitMQ relay [amq.topic / tms.scada.pas]
@@ -118,7 +131,7 @@ Each previously-Connect-managed source/sink is now a Camel route inside the brid
 
 | Was (Kafka Connect connector) | Now (Camel route) |
 |---|---|
-| `tms-artemis-source` × 4 | `outbound-*` × 4 (`from("activemq:topic:…")`) |
+| `tms-artemis-source` × 4 | `outbound-topic-*` (`activemq:topic:…`) plus optional `outbound-queue-*` (`activemq:queue:…`) |
 | `tms-rabbitmq-sink` | `relay-*` (kafka → spring-rabbitmq) |
 | `scada-rabbitmq-source` | `scada-source-*` (spring-rabbitmq → kafka) |
 | `scada-artemis-sink` | `artemis-sink-*` (kafka → activemq) |

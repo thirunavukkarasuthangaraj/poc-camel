@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * The processor emits a base64-encoded String whose decoded bytes are the
  * wire format [12B IV][ciphertext + 16B GCM tag] — matching how
- * {@link com.pinkline.kafkabridge.processor.DecryptExample} consumes it.
+ * {@link com.pinkline.kafkabridge.processor.AesGcmDecryptor} consumes it.
  *
  * Verifies:
  *  1. Output is a base64 String

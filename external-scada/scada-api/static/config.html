@@ -163,16 +163,12 @@ DOOR_PLT_2_3
       <!-- TMS XML editor -->
       <div>
         <label>TMS Publisher · Topic <small style="color:var(--muted);font-weight:400;">(editable — must match bridge allow-list)</small></label>
-        <input type="text" id="ed-tms-topic" list="tms-topic-suggestions" value="jms.topic.TMS.PISInfo" placeholder="jms.topic.TMS.PISInfo">
+        <input type="text" id="ed-tms-topic" list="tms-topic-suggestions" value="jms.topic.rcs.e2k.ctc.train.pas.new" placeholder="jms.topic.rcs.e2k.ctc.train.pas.new">
         <datalist id="tms-topic-suggestions">
-          <option value="jms.topic.TMS.PISInfo"></option>
-          <option value="jms.topic.rcs.e2k.ctc.train.pas"></option>
-          <option value="jms.topic.RCS.E2K.TMS.TrafficReportClient"></option>
-          <option value="jms.topic.TSInfo"></option>
-          <option value="jms.topic.RCS.E2K.TMS.RouteInfo"></option>
+          <option value="jms.topic.rcs.e2k.ctc.train.pas.new"></option>
         </datalist>
-        <label style="margin-top:8px;">XML payload</label>
-        <textarea id="ed-tms-xml" rows="10" placeholder="<TMSPISInfo>...</TMSPISInfo>"></textarea>
+        <label style="margin-top:8px;">APIS JSON payload</label>
+        <textarea id="ed-tms-xml" rows="10" placeholder='{"header": {...}, "data": {"PlatformInfo": [...]}}'></textarea>
         <div class="row" style="margin-top:6px;">
           <button class="btn btn-g" onclick="loadTmsTpl()">Load template</button>
           <button class="btn btn-a" onclick="sendTmsXml()">Send XML</button>

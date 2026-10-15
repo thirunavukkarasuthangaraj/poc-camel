@@ -76,7 +76,7 @@ kubectl -n kafka exec kafka-cluster-kafka-pool-0 -- \
 
 | Address | Dir |
 |---|---|
-| `TMS.PISInfo` | F |
+| `jms.topic.rcs.e2k.ctc.train.pas.new` (final APIS JSON from the Traffic Scheduler, forwarded as-is) | F |
 | `RCS.E2K.TMS.TrafficReportClient` | F |
 | `TSInfo` | F |
 | `RCS.E2K.TMS.RouteInfo` | F |
@@ -87,8 +87,14 @@ kubectl -n kafka exec kafka-cluster-kafka-pool-0 -- \
 kubectl -n artemis exec artemis-0 -- \
   /var/lib/artemis-instance/bin/artemis queue stat \
   --user "$ARTEMIS_USER" --password "$ARTEMIS_PASS" --url tcp://localhost:61616 \
-  | grep -E "SCADA.TMS.Alarms|TMS.PISInfo"
+  | grep -E "SCADA.TMS.Alarms|rcs.e2k.ctc.train.pas.new"
 ```
+
+The bridge preserves multicast consumers configured by `bridge.artemis-topics`
+and independently attaches to existing named anycast queues configured by
+`bridge.artemis-queues`. Queue entries use Camel's
+`activemq:queue:<queue-name>` URI and do not declare, purge, rename, or delete
+broker topology.
 
 ---
 

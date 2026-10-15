@@ -524,139 +524,78 @@ BRIDGE_URL = os.getenv("BRIDGE_URL",
 tms_pub = {
     "enabled":    False,
     "interval_s": 5,
-    "topic":      "TMS.PISInfo",
+    "topic":      "jms.topic.rcs.e2k.ctc.train.pas.new",
     "sent":       0,
     "errors":     0,
     "last_at":    None,
     "last_error": None,
 }
+# The bridge forwards ONE TMS topic: the Traffic Scheduler's PAS platform
+# information, already in the final APIS JSON shape (ICD_PASIF_V3).
 TMS_TOPICS = [
-    "jms.topic.TMS.PISInfo",
-    "jms.topic.RCS.E2K.TMS.TrafficReportClient",
-    "jms.topic.TSInfo",
-    "jms.topic.RCS.E2K.TMS.RouteInfo",
-    "jms.topic.rcs.e2k.ctc.train.pas",
+    "jms.topic.rcs.e2k.ctc.train.pas.new",
 ]
 
-def _short_topic(t: str) -> str:
-    """Strip jms.topic. prefix to look up the right XML template generator."""
-    return t.split(".", 2)[2] if t.startswith("jms.topic.") else t
+_sim_message_id = 0
 
 def _tms_xml(topic: str) -> str:
-    """Generate REALISTIC XML matching the actual TMS schema each topic
-    uses, so the bridge's XmlToJsonProcessor produces meaningful JSON
-    that matches the production wire format.
+    """Synthesize one APIS platform-information message (ICD_PASIF_V3) exactly
+    as the Traffic Scheduler publishes it on jms.topic.rcs.e2k.ctc.train.pas.new.
+    The function keeps its historical name because the UI / REST contract
+    still calls the field "xml"; the payload is JSON.
 
-    Topic name may be the full `jms.topic.X` (preferred — matches bridge
-    allow-list) or just `X`; both are handled.
-
-    Schemas come from the Java POJOs in
-    tms/src/main/java/com/pinkline/kafkabridge/model/."""
-    topic = _short_topic(topic)
+    Timestamps use the scheduler's compact UTC format %Y%m%dT%H%M%S."""
+    global _sim_message_id
+    _sim_message_id += 1
     now = datetime.now(timezone.utc)
-    ts_compact   = now.strftime("%Y%m%dT%H%M%S")             # 20260430T143012
-    ts_iso       = now.strftime("%Y-%m-%dT%H:%M:%S.000Z")    # ISO8601
-    seconds_today = now.hour * 3600 + now.minute * 60 + now.second
-    train_id  = f"T{random.randint(1000, 9999)}"
-    tt_guid   = f"{random.randint(100000, 999999)}-{random.randint(1000, 9999)}-{random.randint(100, 999)}"
-    trip_no   = random.randint(100, 999)
-    line_id   = random.randint(101, 109)
-    platform  = random.randint(2200, 2299)
-    arrival   = (seconds_today + 60) % 86400
-    departure = arrival + 60
-
-    # ── TMS.PISInfo: Passenger Info platform/train info (rcs.e2k.ctc.train.pas.V1) ──
-    if topic == "TMS.PISInfo":
-        station_id   = random.randint(10, 25)
-        platform_id  = f"PL{station_id}{random.randint(0, 99):02d}"
-        train_guid   = f"trafficscheduler-{random.randint(100000000, 999999999):09d}-" \
-                       f"{random.randint(1000, 9999)}-{random.randint(1000, 9999)}-" \
-                       f"{random.randint(100000000000, 999999999999)}"
-        train_name   = f"{random.randint(1, 99):02d}"
-        arrival_ts   = (now).strftime("%Y%m%dT%H%M%S")
-        departure_ts = (now + timedelta(seconds=20)).strftime("%Y%m%dT%H%M%S")
-        dest_id      = random.randint(2000, 2999)
-        return (
-            f'<rcsMsg>'
-            f'<hdr>'
-            f'<schema>rcs.e2k.ctc.train.pas.V1</schema>'
-            f'<sender>RCS.E2K.PIS</sender>'
-            f'</hdr>'
-            f'<data>'
-            f'<PlatformInfos>'
-            f'<PlatformInfo platform="{platform_id}">'
-            f'<StationId>{station_id}</StationId>'
-            f'<NextTrainApproacing>no</NextTrainApproacing>'
-            f'<Trains>'
-            f'<Train idx="0" id="0" GUID="{train_guid}" name="{train_name}" tripno="{trip_no}">'
-            f'<WillStop>yes</WillStop>'
-            f'<AtStation>no</AtStation>'
-            f'<LastForToday>no</LastForToday>'
-            f'<ArrivalTime>{arrival_ts}</ArrivalTime>'
-            f'<DepartureTime>{departure_ts}</DepartureTime>'
-            f'<DestinationId>{dest_id}</DestinationId>'
-            f'</Train>'
-            f'</Trains>'
-            f'</PlatformInfo>'
-            f'</PlatformInfos>'
-            f'</data>'
-            f'</rcsMsg>')
-
-    # ── RCS.E2K.TMS.TrafficReportClient: alternates Arrival / Departure ──
-    if topic == "RCS.E2K.TMS.TrafficReportClient":
-        if random.random() < 0.5:
-            return (
-                f'<SingleArrival>'
-                f'<Arr>'
-                f'<train>'
-                f'<TTGUID>{tt_guid}</TTGUID>'
-                f'<id>{train_id}</id>'
-                f'</train>'
-                f'<loc><tmsid>{platform}</tmsid></loc>'
-                f'<atimes><oTime>{ts_iso}</oTime></atimes>'
-                f'</Arr>'
-                f'</SingleArrival>')
-        return (
-            f'<SingleDeparture>'
-            f'<Dep>'
-            f'<train>'
-            f'<TTGUID>{tt_guid}</TTGUID>'
-            f'<id>{train_id}</id>'
-            f'</train>'
-            f'<loc><tmsid>{platform}</tmsid></loc>'
-            f'<dtimes><oTime>{ts_iso}</oTime></dtimes>'
-            f'</Dep>'
-            f'</SingleDeparture>')
-
-    # ── TSInfo: track section / signalling status (no Java POJO yet —
-    #          treated as generic XML and converted via Jackson XmlMapper) ──
-    if topic == "TSInfo":
-        section_id = f"TS_{platform}_{random.randint(1, 9)}"
-        state = random.choice(["OCCUPIED", "CLEAR", "FAULT", "RESERVED"])
-        return (
-            f'<TSInfo>'
-            f'<dateTime>{ts_compact}</dateTime>'
-            f'<Section id="{section_id}" state="{state}" '
-            f'lineId="{line_id}" trainId="{train_id}"/>'
-            f'</TSInfo>')
-
-    # ── RCS.E2K.TMS.RouteInfo: route destinations for a train ──
-    return (
-        f'<routeinfo>'
-        f'<TTGUID>{tt_guid}</TTGUID>'
-        f'<trainid>{train_id}</trainid>'
-        f'<dests>'
-        f'<dest tmsid="{platform}"/>'
-        f'<dest tmsid="{platform + 1}"/>'
-        f'<dest tmsid="{platform + 2}"/>'
-        f'</dests>'
-        f'</routeinfo>')
+    stamp = lambda t: t.strftime("%Y%m%dT%H%M%S")
+    station_id = random.randint(10, 25)
+    platform_name = f"PL{station_id}{random.randint(0, 99):02d}"
+    trains = []
+    for order in range(2):
+        arr = now + timedelta(minutes=2 + 4 * order)
+        dep = arr + timedelta(seconds=30)
+        trip_no = random.randint(100, 999)
+        trains.append({
+            "TrainOrder":              order,
+            "TrainId":                 "0",
+            "TrainName":               f"{random.randint(1, 99):02d}",
+            "TripNumber":              trip_no,
+            "TrainType":               0,
+            "numVehicles":             0,
+            "line_id":                 str(random.randint(60, 70)),
+            "trip_id":                 trip_no % 1000,
+            "path_id":                 0,
+            "WillStop":                "yes",
+            "AtStation":               "no",
+            "stopping_type":           0,
+            "ArrivalTime":             stamp(arr),
+            "DepartureTime":           stamp(dep),
+            "arr_min":                 int((arr - now).total_seconds() // 60),
+            "DestinationStationId":    0,
+            "DestinationPlatformName": f"PL{random.randint(10, 25)}{random.randint(0, 99):02d}",
+        })
+    msg = {
+        "header": {
+            "schema":      "alstom.APIS.schema.v0",
+            "sender":      "TMS",
+            "MessageID":   _sim_message_id,
+            "MessageType": 1,
+            "timeStamp":   stamp(now),
+        },
+        "data": {
+            "PlatformInfo": [
+                {"PlatformName": platform_name, "StationID": 0, "Trains": trains},
+            ],
+        },
+    }
+    return json.dumps(msg, indent=2)
 
 
 def _tms_publish(topic: str, xml: str) -> None:
     url = f"{BRIDGE_URL}/api/tms-publish/{topic}"
     r = requests.post(url, data=xml.encode("utf-8"),
-                      headers={"Content-Type": "application/xml"},
+                      headers={"Content-Type": "application/json"},
                       timeout=5)
     r.raise_for_status()
     tms_pub["sent"] += 1
@@ -682,12 +621,12 @@ threading.Thread(target=_tms_publish_loop, daemon=True, name="tms-publisher").st
 
 @app.route("/api/tms-publish", methods=["POST"])
 def api_tms_publish_now():
-    """Manual one-shot publish. Body: {"topic": "...", "xml": "..."}.
-    Both fields optional — defaults to current toggle topic + synthesized XML.
+    """Manual one-shot publish. Body: {"topic": "...", "xml": "<APIS JSON>"}.
+    Both fields optional — defaults to current toggle topic + synthesized APIS JSON.
     Topic is free-form (UI lets users type custom topics for testing)."""
     body = request.get_json(silent=True) or {}
     topic = body.get("topic") or tms_pub["topic"]
-    xml = body.get("xml") or _tms_xml(topic if topic in TMS_TOPICS else "TMS.PISInfo")
+    xml = body.get("xml") or _tms_xml(topic if topic in TMS_TOPICS else TMS_TOPICS[0])
     try:
         _tms_publish(topic, xml)
         return jsonify({"ok": True, "topic": topic, "sent": tms_pub["sent"]})
@@ -718,11 +657,11 @@ def api_tms_publish_state():
 
 @app.route("/api/tms-publish/template")
 def api_tms_publish_template():
-    """Return an auto-generated XML template for a topic — used by the config
+    """Return an auto-generated APIS JSON template for a topic — used by the config
     editor to pre-fill the textarea, then user edits + sends scenarios."""
     topic = request.args.get("topic", tms_pub["topic"])
-    # Free-form: fall back to PISInfo template for unknown topics (UI may type any topic)
-    template_topic = topic if topic in TMS_TOPICS else "TMS.PISInfo"
+    # Free-form: fall back to the PAS template for unknown topics (UI may type any topic)
+    template_topic = topic if topic in TMS_TOPICS else TMS_TOPICS[0]
     try:
         return jsonify({"ok": True, "topic": topic, "xml": _tms_xml(template_topic)})
     except Exception as e:

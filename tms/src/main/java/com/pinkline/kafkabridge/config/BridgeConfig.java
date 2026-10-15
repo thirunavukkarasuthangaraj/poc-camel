@@ -66,11 +66,6 @@ public class BridgeConfig {
     // ── Pipeline: ordered sink list ───────────────────────────────
     private String pipeline = "kafka,rabbitmq,mqtt";
 
-    // ── Forward path (TMS → SCADA) XML→JSON toggle ────────────────
-    // true  → convert incoming TMS XML to JSON before sending (default)
-    // false → forward the raw XML through untouched
-    private boolean convertXmlToJson = true;
-
     // ── Encryption ────────────────────────────────────────────────
     private Encrypt encrypt = new Encrypt();
 
@@ -78,6 +73,7 @@ public class BridgeConfig {
     // Default "" so getArtemisTopics().split(",") never NPEs even when
     // BRIDGE_INPUT_FROM_KAFKA=true is set without unsetting this property.
     private String artemisTopics = "";
+    private String artemisQueues = "";
     private Kafka kafka = new Kafka();
 
     // ── Kafka-sourced input: consume Kafka instead of Artemis ─────
@@ -118,14 +114,14 @@ public class BridgeConfig {
     public String getPipeline() { return pipeline; }
     public void setPipeline(String pipeline) { this.pipeline = pipeline; }
 
-    public boolean isConvertXmlToJson() { return convertXmlToJson; }
-    public void setConvertXmlToJson(boolean convertXmlToJson) { this.convertXmlToJson = convertXmlToJson; }
-
     public Encrypt getEncrypt() { return encrypt; }
     public void setEncrypt(Encrypt encrypt) { this.encrypt = encrypt; }
 
     public String getArtemisTopics() { return artemisTopics; }
     public void setArtemisTopics(String artemisTopics) { this.artemisTopics = artemisTopics; }
+
+    public String getArtemisQueues() { return artemisQueues; }
+    public void setArtemisQueues(String artemisQueues) { this.artemisQueues = artemisQueues; }
 
     public Kafka getKafka() { return kafka; }
     public void setKafka(Kafka kafka) { this.kafka = kafka; }
@@ -249,7 +245,7 @@ public class BridgeConfig {
 
     // ── Inner: Kafka-sourced input (Kafka source instead of Artemis) ──
     // When enabled=true, skip the Artemis topic loop and consume from
-    // this Kafka topic. The XmlToJson + Encrypt processors run as today.
+    // this Kafka topic. The Encrypt processor runs as today.
     public static class InputKafka {
         private boolean enabled = false;
         private String  topic         = "tms.raw";

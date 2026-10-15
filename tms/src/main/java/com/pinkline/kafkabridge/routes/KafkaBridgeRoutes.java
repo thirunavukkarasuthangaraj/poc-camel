@@ -3,12 +3,15 @@ package com.pinkline.kafkabridge.routes;
 import com.pinkline.kafkabridge.api.MessageStore;
 import com.pinkline.kafkabridge.config.BridgeConfig;
 import com.pinkline.kafkabridge.processor.AlarmStateFanoutProcessor;
-import com.pinkline.kafkabridge.processor.DecryptExample;
+import com.pinkline.kafkabridge.processor.AesGcmDecryptor;
 import com.pinkline.kafkabridge.processor.EncryptProcessor;
 import com.pinkline.kafkabridge.processor.JsonToXmlProcessor;
 import com.pinkline.kafkabridge.processor.ScadaInboundProcessor;
-import com.pinkline.kafkabridge.processor.XmlToJsonProcessor;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashSet;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.ProducerTemplate;
 import org.apache.camel.builder.RouteBuilder;
@@ -82,6 +85,10 @@ public class KafkaBridgeRoutes extends RouteBuilder {
             .redeliveryDelay(2000)
             .retryAttemptedLogLevel(LoggingLevel.WARN)
             .useOriginalMessage()
+            // Strip inbound JMS headers so the DLQ send cannot fail on a
+            // poisoned JMSDeliveryMode/JMSPriority header (empty byte[] from
+            // a Kafka/RabbitMQ round-trip breaks JmsBinding type conversion)
+            .removeHeaders("JMS*")
             .to("activemq:queue:DLQ.kafka-bridge")
             .log("Dead-letter queue — ${exception.message}")
             .handled(true);
@@ -95,81 +102,20 @@ public class KafkaBridgeRoutes extends RouteBuilder {
                    + "consuming from Kafka topic [{}] instead",
                    config.getInputKafka().getTopic());
         } else {
-        for (String topic : config.getArtemisTopics().split(",")) {
-            topic = topic.trim();
-            String routeId = "outbound-" + topic.replace(".", "-").toLowerCase();
-
-            RouteDefinition route = from("activemq:topic:" + topic)
-                .routeId(routeId)
-                .log("← Artemis [" + topic + "] — pipeline: " + config.getPipeline()
-                        + " | encrypt: " + config.getEncrypt().isEnabled()
-                        + " | xml→json: " + config.isConvertXmlToJson());
-
-            if (config.isConvertXmlToJson()) {
-                route.process(new XmlToJsonProcessor());
-            } else {
-                route.log("XML→JSON disabled — raw XML forwarded");
-            }
-
-            if (config.getEncrypt().isEnabled()) {
-                route.process(new EncryptProcessor());
-            } else {
-                // No encryption — convert String → UTF-8 bytes so all sinks receive byte[]
-                route.process(e -> e.getIn().setBody(
-                        e.getIn().getBody(String.class).getBytes(StandardCharsets.UTF_8)));
-                route.log("Encryption disabled — plain JSON forwarded");
-            }
-
-            // Build the pipeline dynamically from config
-            for (String step : config.getPipeline().split(",")) {
-                switch (step.trim().toLowerCase()) {
-
-                    case "kafka" -> {
-                        route.to("kafka:" + config.getKafka().getTopic()
-                                + "?brokers={{kafka.brokers}}"
-                                + "&valueSerializer=" + BYTE_SER
-                                + "&keySerializer=" + BYTE_SER);
-                        route.log("→ Kafka [" + config.getKafka().getTopic() + "]");
-                    }
-
-                    case "rabbitmq" -> {
-                        BridgeConfig.RabbitmqOut rmq = config.getRabbitmqOut();
-                        route.to("spring-rabbitmq:" + rmq.getExchange()
-                                + "?routingKey=" + rmq.getRoutingKey());
-                        route.log("→ RabbitMQ [" + rmq.getExchange()
-                                + " / " + rmq.getRoutingKey() + "]");
-                    }
-
-                    case "mqtt" -> {
-                        BridgeConfig.MqttSink mqtt = config.getMqtt();
-                        StringBuilder uri = new StringBuilder("paho:")
-                                .append(mqtt.getTopic())
-                                .append("?brokerUrl=").append(mqtt.getBrokerUrl())
-                                .append("&qos=").append(mqtt.getQos())
-                                .append("&clientId=").append(mqtt.getClientId())
-                                .append("-").append(topic.replace(".", "-").toLowerCase())
-                                .append("&automaticReconnect=true")
-                                .append("&cleanSession=true")
-                                .append("&connectionTimeout=10")
-                                .append("&keepAliveInterval=30");
-                        if (mqtt.getUsername() != null && !mqtt.getUsername().isBlank()) {
-                            uri.append("&userName=").append(mqtt.getUsername())
-                               .append("&password=").append(mqtt.getPassword());
-                        }
-                        route.to(uri.toString());
-                        route.log("→ MQTT [" + mqtt.getTopic() + "]");
-                    }
-
-                    default -> log.warn("Unknown pipeline step '{}' — skipped", step.trim());
-                }
-            }
+        for (ArtemisSource source : artemisSources(config)) {
+            RouteDefinition route = from(source.endpointUri())
+                    .routeId(source.routeId())
+                    .log("← Artemis " + source.logLabel() + " [" + source.destination()
+                            + "] JMSMessageID=${header.JMSMessageID} — pipeline: "
+                            + config.getPipeline() + " | encrypt: " + config.getEncrypt().isEnabled());
+            configureOutboundPipeline(route, source.endpointType() + "-" + source.destination());
         }
         } // end else (Artemis-direct mode)
 
         // ══════════════════════════════════════════════════════════════════
         // KAFKA-SOURCED INPUT: Kafka topic → pipeline sinks.
         // Activated by bridge.input-kafka.enabled=true to consume a Kafka
-        // topic instead of Artemis. Reuses XmlToJson + Encrypt unchanged.
+        // topic instead of Artemis. Reuses Encrypt unchanged.
         // ══════════════════════════════════════════════════════════════════
         if (config.getInputKafka().isEnabled()) {
             BridgeConfig.InputKafka in = config.getInputKafka();
@@ -183,15 +129,9 @@ public class KafkaBridgeRoutes extends RouteBuilder {
                 .log("← Kafka source [" + in.getTopic() + "] — pipeline: "
                         + config.getPipeline()
                         + " | encrypt: " + config.getEncrypt().isEnabled())
-                // Kafka delivers byte[] — convert to String for XmlToJsonProcessor
+                // Kafka delivers byte[] — convert to String for EncryptProcessor
                 .process(e -> e.getIn().setBody(
                         new String(e.getIn().getBody(byte[].class), StandardCharsets.UTF_8)));
-
-            if (config.isConvertXmlToJson()) {
-                route.process(new XmlToJsonProcessor());
-            } else {
-                route.log("XML→JSON disabled — raw XML forwarded");
-            }
 
             if (config.getEncrypt().isEnabled()) {
                 route.process(new EncryptProcessor());
@@ -267,7 +207,7 @@ public class KafkaBridgeRoutes extends RouteBuilder {
             if (rev.isEncryptEnabled()) {
                 route.process(e -> {
                     byte[] payload = e.getIn().getBody(byte[].class);
-                    e.getIn().setBody(DecryptExample.decrypt(payload));
+                    e.getIn().setBody(AesGcmDecryptor.decrypt(payload));
                 });
             } else {
                 route.process(e -> e.getIn().setBody(
@@ -364,7 +304,10 @@ public class KafkaBridgeRoutes extends RouteBuilder {
                 route.process(new JsonToXmlProcessor());
             }
 
-            route.to("activemq:topic:" + inb.getToTopic())
+            // Same guard as artemis-sink: RabbitMQ headers may carry a stale
+            // JMS* header that breaks JmsBinding on send.
+            route.removeHeaders("JMS*")
+                 .to("activemq:topic:" + inb.getToTopic())
                  .log("→ Artemis [" + inb.getToTopic() + "] delivered");
         }
 
@@ -420,6 +363,11 @@ public class KafkaBridgeRoutes extends RouteBuilder {
                 .log("← Kafka sink-input [" + sink.getFromKafka() + "]")
                 .process(e -> e.getIn().setBody(
                         new String(e.getIn().getBody(byte[].class), StandardCharsets.UTF_8)))
+                // Kafka headers arrive as byte[]; a leaked JMSDeliveryMode
+                // header (empty byte[]) makes JmsBinding throw
+                // TypeConversionException on send. Let Artemis set fresh
+                // JMS headers instead of trusting transported ones.
+                .removeHeaders("JMS*")
                 .to("activemq:topic:" + sink.getToTopic())
                 .log("→ Artemis [" + sink.getToTopic() + "] delivered");
         }
@@ -444,7 +392,7 @@ public class KafkaBridgeRoutes extends RouteBuilder {
                     if (payload == null) {
                         payload = exchange.getIn().getBody(String.class).getBytes();
                     }
-                    String json = DecryptExample.decrypt(payload);
+                    String json = AesGcmDecryptor.decrypt(payload);
                     exchange.getIn().setBody(json);
                 })
                 .process(exchange -> {
@@ -455,4 +403,106 @@ public class KafkaBridgeRoutes extends RouteBuilder {
                 .log("→ Monitor stored — available at /api/messages");
         }
     }
+
+    private void configureOutboundPipeline(RouteDefinition route, String sourceInformation) {
+        // JMSMessageID is logged before this point. Strip JMS metadata so it
+        // cannot leak through Kafka/RabbitMQ and break a later JMS send.
+        route.removeHeaders("JMS*");
+
+        // The body is already the final APIS JSON (ICD_PASIF_V3) built by the Traffic
+        // Scheduler on jms.topic.rcs.e2k.ctc.train.pas.new — forwarded as-is, no conversion.
+
+        if (config.getEncrypt().isEnabled()) {
+            route.process(new EncryptProcessor());
+        } else {
+            route.process(e -> e.getIn().setBody(
+                    e.getIn().getBody(String.class).getBytes(StandardCharsets.UTF_8)));
+            route.log("Encryption disabled — plain JSON forwarded");
+        }
+
+        for (String step : configuredValues(config.getPipeline())) {
+            switch (step.toLowerCase()) {
+                case "kafka" -> {
+                    route.to("kafka:" + config.getKafka().getTopic()
+                            + "?brokers={{kafka.brokers}}"
+                            + "&valueSerializer=" + BYTE_SER
+                            + "&keySerializer=" + BYTE_SER);
+                    route.log("→ Kafka [" + config.getKafka().getTopic() + "]");
+                }
+                case "rabbitmq" -> {
+                    BridgeConfig.RabbitmqOut rmq = config.getRabbitmqOut();
+                    route.to("spring-rabbitmq:" + rmq.getExchange()
+                            + "?routingKey=" + rmq.getRoutingKey());
+                    route.log("→ RabbitMQ [" + rmq.getExchange()
+                            + " / " + rmq.getRoutingKey() + "]");
+                }
+                case "mqtt" -> {
+                    BridgeConfig.MqttSink mqtt = config.getMqtt();
+                    StringBuilder uri = new StringBuilder("paho:")
+                            .append(mqtt.getTopic())
+                            .append("?brokerUrl=").append(mqtt.getBrokerUrl())
+                            .append("&qos=").append(mqtt.getQos())
+                            .append("&clientId=").append(mqtt.getClientId())
+                            .append("-").append(routeIdPart(sourceInformation))
+                            .append("&automaticReconnect=true")
+                            .append("&cleanSession=true")
+                            .append("&connectionTimeout=10")
+                            .append("&keepAliveInterval=30");
+                    if (mqtt.getUsername() != null && !mqtt.getUsername().isBlank()) {
+                        uri.append("&userName=").append(mqtt.getUsername())
+                                .append("&password=").append(mqtt.getPassword());
+                    }
+                    route.to(uri.toString());
+                    route.log("→ MQTT [" + mqtt.getTopic() + "]");
+                }
+                default -> log.warn("Unknown pipeline step '{}' — skipped", step);
+            }
+        }
+    }
+
+    static Set<String> configuredValues(String value) {
+        Set<String> result = new LinkedHashSet<>();
+        if (value == null || value.isBlank()) {
+            return result;
+        }
+        for (String entry : value.split(",", -1)) {
+            String trimmed = entry.trim();
+            if (!trimmed.isEmpty()) {
+                result.add(trimmed);
+            }
+        }
+        return result;
+    }
+
+    static String routeIdPart(String destination) {
+        String result = destination.toLowerCase()
+                .replaceAll("[^a-z0-9]+", "-")
+                .replaceAll("^-+|-+$", "");
+        return result.isEmpty() ? "destination" : result;
+    }
+
+    static List<ArtemisSource> artemisSources(BridgeConfig config) {
+        List<ArtemisSource> sources = new ArrayList<>();
+        Set<String> routeIds = new LinkedHashSet<>();
+        addSourceSpecs(sources, routeIds, "topic", "TOPIC", config.getArtemisTopics());
+        addSourceSpecs(sources, routeIds, "queue", "QUEUE", config.getArtemisQueues());
+        return sources;
+    }
+
+    private static void addSourceSpecs(List<ArtemisSource> sources, Set<String> routeIds,
+                                       String endpointType, String logLabel, String configured) {
+        for (String destination : configuredValues(configured)) {
+            String base = "outbound-" + endpointType + "-" + routeIdPart(destination);
+            String routeId = base;
+            int suffix = 2;
+            while (!routeIds.add(routeId)) {
+                routeId = base + "-" + suffix++;
+            }
+            sources.add(new ArtemisSource(endpointType, logLabel, destination,
+                    "activemq:" + endpointType + ":" + destination, routeId));
+        }
+    }
+
+    record ArtemisSource(String endpointType, String logLabel, String destination,
+                         String endpointUri, String routeId) { }
 }

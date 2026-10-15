@@ -16,7 +16,7 @@ import java.util.Base64;
 /**
  * EncryptProcessor
  *
- * Encrypts the JSON string (from XmlToJsonProcessor) using AES-256-GCM.
+ * Encrypts the JSON string (the APIS JSON from the Traffic Scheduler) using AES-256-GCM.
  *
  * Key source: Environment variable SCADA_AES_KEY (Base64-encoded 256-bit key)
  *             NEVER from config files or hardcoded.
