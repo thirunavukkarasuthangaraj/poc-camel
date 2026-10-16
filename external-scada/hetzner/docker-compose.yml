@@ -1,0 +1,103 @@
+# ════════════════════════════════════════════════════════════════════
+# PAS pipeline — SCADA side, for a standalone VM (Hetzner or similar).
+#
+# This is the half of the pipeline that lives on the SCADA network.
+# The Camel bridge on the TMS side dials OUT to this VM over AMQP 5672;
+# nothing here ever initiates a connection back into TMS.
+#
+#   TMS network                    |  this VM
+#   Artemis -> Bridge -> Kafka ----+--> RabbitMQ -> SCADA API
+#                                  |   (AMQP 5672, the only crossing)
+#
+# Both directions ride that single AMQP connection, so the firewall
+# needs one rule in one direction.
+#
+#   docker compose up -d
+#
+# SAFE BY DEFAULT: every port binds to 127.0.0.1 unless you set
+# BIND_ADDR in .env. Set it to the WireGuard address, never 0.0.0.0.
+# ════════════════════════════════════════════════════════════════════
+
+name: pas-scada-external
+
+services:
+
+  # ── RabbitMQ — the boundary component ──────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: pas-rabbitmq
+    hostname: pas-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?set RABBITMQ_USER in .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:?set RABBITMQ_PASS in .env}
+    ports:
+      # AMQP — the bridge connects here. This is the ONLY port that
+      # needs to be reachable from the TMS side.
+      - "${BIND_ADDR:-127.0.0.1}:5672:5672"
+      # MQTT — for a real SCADA device on this network.
+      - "${BIND_ADDR:-127.0.0.1}:1883:1883"
+      # Management UI — loopback only. Reach it with an SSH tunnel:
+      #   ssh -L 15672:127.0.0.1:15672 root@<vm>
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 30s
+
+  # ── SCADA API — stands in for ScateX ───────────────────────────
+  # Subscribes to MQTT tms/scada/pas, decrypts AES-256-GCM, and
+  # serves a live dashboard. Silent until you trigger it.
+  scada-api:
+    build: ../scada-api
+    image: pas-scada-api:vm
+    container_name: pas-scada-api
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      # Broker — container-to-container, stays inside the VM
+      MQTT_HOST: rabbitmq
+      MQTT_PORT: "1883"
+      MQTT_USER: ${RABBITMQ_USER}
+      MQTT_PASS: ${RABBITMQ_PASS}
+
+      # Topics — must match the bridge's routing keys
+      MQTT_TOPIC_IN:  tms/scada/pas
+      MQTT_TOPIC_OUT: scada/tms/alarms
+
+      # MUST be byte-identical to SCADA_AES_KEY in the bridge's secret,
+      # or every forward message lands in decrypt_fail.
+      SCADA_AES_KEY: ${SCADA_AES_KEY:?set SCADA_AES_KEY in .env}
+
+      SCADA_CREATOR_ID: ScateX
+      SCADA_OUTBOUND_ENCRYPT: "false"
+
+      # Silent by default — a fresh container publishes nothing until
+      # you ask it to, from the dashboard or /api/publish.
+      AUTO_ALARM_ENABLED:      "false"
+      KEEPALIVE_PAUSED:        "true"
+      SEND_ALL_ALARMS_ENABLED: "false"
+      GET_ALL_ALARMS_ENABLED:  "false"
+
+      # Optional: its STOMP injector, only usable if this VM can reach
+      # Artemis back across the tunnel. Leave blank to disable.
+      ARTEMIS_HOST:  ${ARTEMIS_HOST:-127.0.0.1}
+      ARTEMIS_PORT:  "61616"
+      ARTEMIS_USER:  ${ARTEMIS_USER:-}
+      ARTEMIS_PASS:  ${ARTEMIS_PASS:-}
+      ARTEMIS_TOPIC: POWER_SCADA_TMS_INFO
+    ports:
+      # Dashboard — loopback by default. Reach it with an SSH tunnel:
+      #   ssh -L 8091:127.0.0.1:8091 root@<vm>   then open localhost:8091
+      - "${DASHBOARD_BIND:-127.0.0.1}:8091:8091"
+
+volumes:
+  rabbitmq-data:

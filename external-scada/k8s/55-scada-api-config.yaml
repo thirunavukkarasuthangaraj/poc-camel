@@ -24,7 +24,10 @@ data:
   SCADA_CREATOR_ID: "ScateX"
 
   # ── TMS Artemis (direct STOMP publish: Power-SCADA feed + TMS test injector) ──
-  ARTEMIS_HOST:  "10.4.1.28"
+  # Same rule as the bridge: Artemis is reachable only through HAProxy.
+  # svc/artemis (ns artemis) is headless, and a node IP fails because
+  # HAProxy exposes 61616 as nodePort 30002.
+  ARTEMIS_HOST:  "haproxy-service.haproxy.svc.cluster.local"
   ARTEMIS_PORT:  "61616"
   ARTEMIS_TOPIC: "POWER_SCADA_TMS_INFO"
 

@@ -7,8 +7,16 @@ data:
   # Broker addresses (env). Credentials: secret.yaml. Topics: configmap-appprops.yaml.
   SPRING_PROFILES_ACTIVE: "prod"
 
-  # ActiveMQ Artemis (TMS)
-  ARTEMIS_HOST: "10.4.1.28"
+  # ActiveMQ Artemis (TMS) — reached through the HAProxy service, NOT the
+  # headless artemis service and NOT a node IP.
+  #   svc/artemis (ns artemis) is ClusterIP None, so its DNS round-robins
+  #   across artemis-0/1/2. This is a symmetric 3-broker cluster with no
+  #   ha-policy, so a consumer that lands on a different broker than the
+  #   publisher connects cleanly and then receives NOTHING. HAProxy is what
+  #   makes the broker choice deterministic.
+  #   A node IP fails too: HAProxy exposes 61616 as nodePort 30002, so
+  #   tcp://<node>:61616 is refused.
+  ARTEMIS_HOST: "haproxy-service.haproxy.svc.cluster.local"
   ARTEMIS_PORT: "61616"
   # TLS acceptor: set ARTEMIS_SCHEME=ssl, TLS_TRUSTSTORE_PATH=/etc/ssl/bridge/truststore.jks,
   # create Secret bridge-tls-truststore (truststore.jks) and add TLS_TRUSTSTORE_PASS to bridge-secret.
@@ -19,6 +27,20 @@ data:
   KAFKA_HOST: "kafka-cluster-kafka-bootstrap.kafka.svc.cluster.local"
   KAFKA_PORT: "9092"
 
-  # RabbitMQ (SCADA side; external systems consume from it over AMQP or MQTT)
+  # RabbitMQ (SCADA side; external systems consume from it over AMQP or MQTT).
+  #
+  # This is the ONLY address the bridge reaches outside the TMS network.
+  # Artemis and Kafka are never exposed; only the AES-256-GCM encrypted
+  # payload crosses. Point RABBITMQ_HOST at the SCADA-side broker to split
+  # the two networks — nothing else in the pipeline moves.
   RABBITMQ_HOST: "rabbitmq-internal.scada.svc.cluster.local"
   RABBITMQ_PORT: "5672"
+
+  # ── Remote-broker settings ────────────────────────────────────────
+  # Only matter once RABBITMQ_HOST is off-cluster. Defaults suit a broker
+  # one hop away; these keep a brief link blip from dead-lettering a
+  # message, and turn on TLS so credentials do not cross in clear.
+  RABBITMQ_SSL: "false"
+  RABBITMQ_CONNECT_TIMEOUT: "10s"
+  RABBITMQ_HEARTBEAT: "30s"
+  RABBITMQ_RETRY_ATTEMPTS: "5"

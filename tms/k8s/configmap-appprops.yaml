@@ -15,7 +15,7 @@ data:
     bridge.artemis-topics=jms.topic.rcs.e2k.ctc.train.pas.new
     bridge.artemis-queues=
     # true = AES-256-GCM (key SCADA_AES_KEY). SCADA/APIS must decrypt.
-    bridge.encrypt.enabled=false
+    bridge.encrypt.enabled=true
     bridge.kafka.topic=tms.scada.encrypted
     # Kafka → RabbitMQ; RabbitMQ's MQTT plugin delivers it to SCADA as tms/scada/pas
     bridge.forward[0].from-kafka=tms.scada.encrypted

@@ -6,10 +6,13 @@
 # Publishes to:  scada/tms/alarms  (4 RSAE types back to TMS)
 # Dashboard: http://<node-ip>:30891
 #
-# Image: build locally and push to your registry, then update `image:`
+# Image: internal registry 10.4.1.28:4001 — the cluster pulls from here.
 #   cd external-scada/scada-api
-#   docker build -t ghcr.io/<owner>/pas-scada-api:latest .
-#   docker push ghcr.io/<owner>/pas-scada-api:latest
+#   docker build --provenance=false --sbom=false -t 10.4.1.28:4001/tms/external-scada-api:latest .
+#   docker push 10.4.1.28:4001/tms/external-scada-api:latest
+#
+# --provenance/--sbom off is required: buildx attestation manifests
+# produce a nested OCI index that containerd/CRI cannot run.
 # ═══════════════════════════════════════════════════════════════════
 apiVersion: apps/v1
 kind: Deployment
@@ -30,12 +33,12 @@ spec:
     spec:
       containers:
         - name: scada-api
-          image: ghcr.io/thirunavukkarasuthangaraj/pas-scada-api:latest
-          # Never = use the locally-built image only; do not pull from
-          # ghcr.io (registry copy can lag the local build, causing pods
-          # to run a stale endpoint set). For AKS/registry-pull use
-          # IfNotPresent here and let CI push a fresh tag to ACR.
-          imagePullPolicy: Never
+          image: 10.4.1.28:4001/tms/external-scada-api:20261016
+          # IfNotPresent = pull from the internal registry when the node
+          # does not already have the image. The registry allows anonymous
+          # pull, so no imagePullSecret is required. Push a NEW TAG rather
+          # than reusing :latest when you need a guaranteed refresh.
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8091
               name: http
@@ -72,6 +75,19 @@ spec:
                 secretKeyRef:
                   name: scada-api-secret
                   key: SCADA_AES_KEY
+            # app.py reads these for the STOMP TMS injector / Power-SCADA feed.
+            # Without them it silently falls back to admin/admin and every
+            # publish fails auth. Must match the bridge's bridge-secret.
+            - name: ARTEMIS_USER
+              valueFrom:
+                secretKeyRef:
+                  name: scada-api-secret
+                  key: ARTEMIS_USER
+            - name: ARTEMIS_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: scada-api-secret
+                  key: ARTEMIS_PASS
 
           livenessProbe:
             httpGet:
